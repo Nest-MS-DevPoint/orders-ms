@@ -6,6 +6,8 @@ interface EnvVars {
     DATABASE_URL: string
     PRODUCT_MICROSERVICE_HOST: string,
     PRODUCT_MICROSERVICE_PORT: number,
+
+    NATS_SERVERS: string[]
 }
 
 const envsSchema = joi.object({
@@ -15,9 +17,14 @@ const envsSchema = joi.object({
     PRODUCT_MICROSERVICE_HOST: joi.string().required(),
     PRODUCT_MICROSERVICE_PORT: joi.number().required(),
 
+    NATS_SERVERS: joi.array().items( joi.string() ).required(),
+
 }).unknown(true)
 
-const { error, value } = envsSchema.validate( process.env )
+const { error, value } = envsSchema.validate( {
+    ...process.env,
+    NATS_SERVERS: process.env.NATS_SERVERS?.split(',')
+} )
 
 if (error){
     throw new Error(`Config validation error: ${error.message}`)
@@ -30,4 +37,6 @@ export const envs = {
     databaseUrl: envVars.DATABASE_URL,
     productHost: envVars.PRODUCT_MICROSERVICE_HOST,
     productPort: envVars.PRODUCT_MICROSERVICE_PORT,
+
+    natsServers: envVars.NATS_SERVERS,
 }
