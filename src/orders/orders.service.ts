@@ -1,10 +1,11 @@
 import { HttpStatus, Inject, Injectable, Logger, OnModuleInit } from '@nestjs/common';
-import { PrismaClient } from '@prisma/client';
+import { OrderStatus, PrismaClient } from '@prisma/client';
 import { ClientProxy, RpcException } from '@nestjs/microservices';
 import { OrderPagination } from './dto/order-pagination.dto';
-import { ChangeOrderStatus, CreateOrderDto } from './dto';
+import { ChangeOrderStatus, CreateOrderDto, PaidOrderDto } from './dto';
 import { NATS_SERVICE } from 'src/config';
 import { catchError, firstValueFrom } from 'rxjs';
+import { OrderWithProduct } from './interface/order-with-product.interface';
 
 @Injectable()
 export class OrdersService extends PrismaClient implements OnModuleInit {
@@ -16,21 +17,21 @@ export class OrdersService extends PrismaClient implements OnModuleInit {
 
   constructor(
     @Inject(NATS_SERVICE) private readonly client: ClientProxy
-  ){
+  ) {
     super();
   }
-  
+
   async create(createOrderDto: CreateOrderDto) {
     this.logger.log(createOrderDto)
 
     const { items } = createOrderDto;
-    const productsIds = items.map( product => product.productId)
+    const productsIds = items.map(product => product.productId)
 
     this.logger.log(productsIds)
-    
+
     try {
       // 1. Confirmar Ids de productos
-      const products: any[] = await firstValueFrom(this.client.send({cmd: 'validate_product'}, productsIds))
+      const products: any[] = await firstValueFrom(this.client.send({ cmd: 'validate_product' }, productsIds))
       this.logger.log(products)
 
       // 2. Calculos de los valores
@@ -106,7 +107,7 @@ export class OrdersService extends PrismaClient implements OnModuleInit {
           status: status
         }
       }),
-      meta:{
+      meta: {
         total,
         page,
         lastPage
@@ -115,8 +116,8 @@ export class OrdersService extends PrismaClient implements OnModuleInit {
   }
 
   async findOne(id: string) {
-    
-    const order =  await this.order.findFirst({
+
+    const order = await this.order.findFirst({
       where: {
         id
       },
@@ -131,15 +132,15 @@ export class OrdersService extends PrismaClient implements OnModuleInit {
       }
     })
 
-    if (!order){
+    if (!order) {
       throw new RpcException({
         status: HttpStatus.NOT_FOUND,
         message: `Order '${id}' not found`
       })
     }
 
-    const productsIds = order.orderItem.map(( product => product.productId))
-    const products: any[] = await firstValueFrom(this.client.send({cmd: 'validate_product'}, productsIds))
+    const productsIds = order.orderItem.map((product => product.productId))
+    const products: any[] = await firstValueFrom(this.client.send({ cmd: 'validate_product' }, productsIds))
 
 
     return {
@@ -152,18 +153,58 @@ export class OrdersService extends PrismaClient implements OnModuleInit {
   }
 
 
-  async changeStatus(changeOrderStatus: ChangeOrderStatus){
-    const {id, status} = changeOrderStatus
-    
+  async changeStatus(changeOrderStatus: ChangeOrderStatus) {
+    const { id, status } = changeOrderStatus
+
     const order = await this.findOne(id)
 
-    if (order.status === status){
+    if (order.status === status) {
       return order
     }
 
     return this.order.update({
-      where: {id},
-      data: {status: status},
+      where: { id },
+      data: { status: status },
     })
+  }
+
+  async createPaymentSession(order: OrderWithProduct) {
+    const paymentSession = await firstValueFrom(
+      this.client.send('create.payment.session', {
+        orderId: order.id,
+        currency: 'usd',
+        items: order.orderItem.map(item => ({
+          name: item.name,
+          price: item.price,
+          quantity: item.quantity,
+        }))
+      })
+    );
+    return paymentSession;
+  }
+
+  async markOrderAsPaid(paidOrderDto: PaidOrderDto) {
+
+    this.logger.log('Marking order as paid:', paidOrderDto)
+
+    const orderPaid = await this.order.update({
+      where: { id: paidOrderDto.orderId },
+      data: {
+        paid: true,
+        paidAt: new Date(),
+        status: OrderStatus.PAID,
+        stripeChargeId: paidOrderDto.stripePaymentId,
+
+        OrderReceipt: {
+          create: {
+            receiptUrl: paidOrderDto.receiptURL
+          }
+        }
+      }
+    });
+
+    this.logger.log('Order marked as paid:', orderPaid)
+
+    return orderPaid;
   }
 }
