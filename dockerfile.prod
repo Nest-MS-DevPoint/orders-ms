@@ -1,0 +1,58 @@
+# 3 Etapas
+
+# Dependencies
+FROM node:22-alpine3.19 AS deps
+WORKDIR /usr/src/app
+
+COPY package.json ./
+# COPY package-lock.json ./
+COPY yarn.lock ./
+
+RUN yarn install --frozen-lockfile
+
+# Builder
+FROM node:22-alpine3.19 AS build
+
+WORKDIR /usr/src/app
+
+ARG ORDERS_DB_URL
+ENV DATABASE_URL=$ORDERS_DB_URL
+# copiar deps
+COPY --from=deps /usr/src/app/node_modules ./node_modules
+
+# Copiar todo el codigo fuente de la app
+COPY . .
+
+RUN npx prisma migrate deploy
+RUN npx prisma generate
+
+# RUN npm run test
+RUN yarn build
+
+# Dejamos las dependencias de produccion 
+# RUN npm ci -f --only=production && npm cache clean --force
+# RUN npm install --only=production && npm cache clean --force
+RUN yarn install --production --frozen-lockfile && yarn cache clean
+
+
+# Imagen final
+
+FROM node:22-alpine3.19 AS prod
+
+WORKDIR /usr/src/app
+
+# Copiar deps del stage build
+COPY --from=build /usr/src/app/node_modules ./node_modules
+
+# Copiar la carpeta de dist
+COPY --from=build /usr/src/app/dist ./dist
+
+# Indicamos que estamos en produccion
+ENV NODE_ENV=production
+
+# Creamos un usuario node
+USER node
+
+EXPOSE 3000
+
+CMD [ "node", "dist/main.js" ]
