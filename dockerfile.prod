@@ -21,7 +21,7 @@ WORKDIR /usr/src/app
 # ARG ORDERS_DB_URL
 # ENV DATABASE_URL=$ORDERS_DB_URL
 
-RUN echo "database_url :::> $$ORDER_DATABASE_URL"
+RUN echo "database_url :::> $ORDER_DATABASE_URL"
 
 # copiar deps
 COPY --from=deps /usr/src/app/node_modules ./node_modules
