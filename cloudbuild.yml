@@ -1,20 +1,20 @@
 steps:
-  - name: "gcr.io/cloud-builders/docker"
-    args:
-      [
-        "build",
-        "-t",
-        "us-east4-docker.pkg.dev/tienda-ms-481308/image-register/orders-ms",
-        "-f",
-        "dockerfile.prod",
-        "--platform=linux/amd64",
-        ".",
-      ]
-  - name: "gcr.io/cloud-builders/docker"
-    args:
-      [
-        "push",
-        "us-east4-docker.pkg.dev/tienda-ms-481308/image-register/orders-ms",
-      ]
-options:
-  logging: CLOUD_LOGGING_ONLY
+- name: 'gcr.io/cloud-builders/docker'
+  entrypoint: 'bash'
+  args:
+    - -c
+    - |
+      docker build -t us-east4-docker.pkg.dev/tienda-ms-481308/image-register/orders-ms -f dockerfile.prod --platform=linux/amd64 --build-arg ORDERS_DATABASE_URL=$$DATABASE_URL .
+  secretEnv: ['DATABASE_URL']
+
+- name: 'gcr.io/cloud-builders/docker'
+  args:
+    [
+      'push',
+      'us-east4-docker.pkg.dev/tienda-ms-481308/image-register/orders-ms',
+    ]
+
+availableSecrets:
+  secretManager:
+  - versionName: projects/366356732000/secrets/order_database_url/versions/1
+    env: 'DATABASE_URL'
